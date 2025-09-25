@@ -1,8 +1,8 @@
 {
-  "name": "klikindomaret-proxy",
+  "name": "Apiklik",
   "version": "1.0.0",
   "description": "Proxy API untuk KlikIndomaret search",
-  "main": "api/klikindomaret.js",
+  "main": "klik.js",
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod"
