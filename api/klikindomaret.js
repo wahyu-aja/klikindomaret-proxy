@@ -79,19 +79,24 @@ export default async function handler(req, res) {
                 const response = await fetch(`${API_URL}?${queryParams}`, {
                     method: 'GET',
                     headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Referer': 'https://www.klikindomaret.com/',
-                        'Origin': 'https://www.klikindomaret.com',
+                        'Accept': 'application/json, text/plain, */*',
                         'Accept-Language': 'id-ID,id;q=0.9,en;q=0.8',
-                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Accept-Encoding': 'gzip, deflate, br, zstd',
+                        'Cache-Control': 'no-cache',
                         'Connection': 'keep-alive',
+                        'DNT': '1',
+                        'Host': 'ap-mc.klikindomaret.com',
+                        'Pragma': 'no-cache',
+                        'Referer': 'https://www.klikindomaret.com/',
+                        'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+                        'Sec-Ch-Ua-Mobile': '?0',
+                        'Sec-Ch-Ua-Platform': '"Windows"',
                         'Sec-Fetch-Dest': 'empty',
                         'Sec-Fetch-Mode': 'cors',
-                        'Sec-Fetch-Site': 'same-site'
+                        'Sec-Fetch-Site': 'same-site',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
                     },
-                    timeout: 10000
+                    signal: AbortSignal.timeout(15000)
                 });
 
                 if (!response.ok) {
