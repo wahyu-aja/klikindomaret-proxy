@@ -48,6 +48,77 @@
             padding: 30px;
         }
 
+        .token-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            border-left: 4px solid #667eea;
+        }
+
+        .token-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+        }
+
+        .token-info {
+            flex: 1;
+        }
+
+        .token-info h4 {
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .token-info p {
+            font-size: 13px;
+            color: #666;
+            margin: 3px 0;
+        }
+
+        .token-valid {
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .token-expired {
+            color: #dc3545;
+            font-weight: 600;
+        }
+
+        .token-unknown {
+            color: #ffc107;
+            font-weight: 600;
+        }
+
+        .btn-refresh {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-refresh:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-refresh:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .form-group {
             margin-bottom: 25px;
         }
@@ -80,7 +151,7 @@
 
         .form-group textarea {
             resize: vertical;
-            min-height: 120px;
+            min-height: 100px;
         }
 
         .hint {
@@ -233,6 +304,15 @@
             margin-top: 20px;
         }
 
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
         .batch-info {
             background: #e3f2fd;
             padding: 15px;
@@ -257,6 +337,15 @@
             .content {
                 padding: 20px;
             }
+
+            .token-status {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .btn-refresh {
+                width: 100%;
+            }
         }
     </style>
 </head>
@@ -264,21 +353,39 @@
     <div class="container">
         <div class="header">
             <h1>🏪 Cek Stok Indomaret</h1>
-            <p>Aplikasi Web Cek Stok Produk Indomaret</p>
+            <p>Aplikasi Web Cek Stok Produk Indomaret dengan Auto Refresh Token</p>
         </div>
 
         <div class="content">
-            <form id="stockForm">
+            <div class="token-section">
+                <h4 style="margin-bottom: 15px; color: #333;">🔑 Status Token</h4>
+                <div class="token-status">
+                    <div class="token-info">
+                        <h4>Access Token</h4>
+                        <p id="accessTokenStatus" class="token-unknown">Belum dimuat</p>
+                        <p id="accessTokenExpiry" style="font-size: 12px;"></p>
+                    </div>
+                    <button class="btn-refresh" id="btnRefresh">
+                        🔄 Refresh Token
+                    </button>
+                </div>
+                <div id="refreshMessage"></div>
+            </div>
+
+            <form id="tokenForm" style="margin-bottom: 25px;">
                 <div class="form-group">
-                    <label for="tokenInput">📝 Token (module.exports format)</label>
+                    <label for="refreshTokenInput">🔐 Refresh Token</label>
                     <textarea 
-                        id="tokenInput" 
-                        placeholder='module.exports = {&#10;  accessToken: "eyJ0eXAi...",&#10;  refreshToken: "eyJ0eXAi..."&#10;};'
+                        id="refreshTokenInput" 
+                        placeholder="Paste refresh token Anda di sini"
                         required
                     ></textarea>
-                    <div class="hint">Paste isi file token.js Anda di sini</div>
+                    <div class="hint">Refresh token akan disimpan di localStorage browser Anda</div>
                 </div>
+                <button type="submit" class="btn">💾 Simpan Refresh Token</button>
+            </form>
 
+            <form id="stockForm">
                 <div class="form-group">
                     <label for="storeCode">🏪 Kode Toko</label>
                     <input 
@@ -307,19 +414,164 @@
 
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <p>Sedang mengecek stok... Mohon tunggu</p>
+                <p id="loadingText">Sedang mengecek stok... Mohon tunggu</p>
             </div>
 
             <div class="result" id="result"></div>
         </div>
     </div>
 
-    <script src="token.js"></script>
     <script>
         // Constants
         const TELUR_QTY_10 = new Set(['20024079', '10003795']);
         const TELUR_QTY_6 = new Set(['20081741', '10004977']);
         const requestCache = new Map();
+
+        // Token Management
+        let currentAccessToken = null;
+        let currentRefreshToken = null;
+
+        // Load tokens from memory
+        function loadTokens() {
+            const stored = sessionStorage.getItem('tokens');
+            if (stored) {
+                const tokens = JSON.parse(stored);
+                currentAccessToken = tokens.accessToken;
+                currentRefreshToken = tokens.refreshToken;
+                updateTokenStatus();
+            }
+
+            const savedRefresh = localStorage.getItem('refreshToken');
+            if (savedRefresh && !currentRefreshToken) {
+                currentRefreshToken = savedRefresh;
+                document.getElementById('refreshTokenInput').value = savedRefresh;
+            }
+        }
+
+        // Save tokens to memory
+        function saveTokens() {
+            if (currentAccessToken || currentRefreshToken) {
+                sessionStorage.setItem('tokens', JSON.stringify({
+                    accessToken: currentAccessToken,
+                    refreshToken: currentRefreshToken
+                }));
+            }
+        }
+
+        // Decode JWT token
+        function decodeToken(token) {
+            try {
+                const base64Url = token.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
+                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                }).join(''));
+                return JSON.parse(jsonPayload);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // Check if token is expired
+        function isTokenExpired(token) {
+            if (!token) return true;
+            
+            const decoded = decodeToken(token);
+            if (!decoded || !decoded.exp) return false;
+            
+            const currentTime = Math.floor(Date.now() / 1000);
+            return decoded.exp < (currentTime + 60);
+        }
+
+        // Update token status display
+        function updateTokenStatus() {
+            const statusEl = document.getElementById('accessTokenStatus');
+            const expiryEl = document.getElementById('accessTokenExpiry');
+            
+            if (!currentAccessToken) {
+                statusEl.textContent = 'Belum ada token';
+                statusEl.className = 'token-unknown';
+                expiryEl.textContent = '';
+                return;
+            }
+
+            const decoded = decodeToken(currentAccessToken);
+            if (decoded && decoded.exp) {
+                const expTime = new Date(decoded.exp * 1000);
+                const now = new Date();
+                const diff = expTime - now;
+                
+                if (diff > 0) {
+                    const minutes = Math.floor(diff / 60000);
+                    statusEl.textContent = '✅ Token Valid';
+                    statusEl.className = 'token-valid';
+                    expiryEl.textContent = `Berlaku ${minutes} menit lagi (${expTime.toLocaleTimeString('id-ID')})`;
+                } else {
+                    statusEl.textContent = '❌ Token Kadaluarsa';
+                    statusEl.className = 'token-expired';
+                    expiryEl.textContent = 'Token sudah tidak berlaku';
+                }
+            } else {
+                statusEl.textContent = '⚠️ Token Tidak Valid';
+                statusEl.className = 'token-unknown';
+                expiryEl.textContent = '';
+            }
+        }
+
+        // Refresh token function
+        async function performRefreshToken() {
+            if (!currentRefreshToken) {
+                throw new Error('Refresh token tidak ditemukan. Silakan masukkan refresh token terlebih dahulu.');
+            }
+
+            const url = "https://ap-mc.klikindomaret.com/assets-klikidmsearch/api/post/customer/api/webapp/authentication/refresh-token";
+
+            const headers = {
+                "Content-Type": "application/json",
+                "apps": JSON.stringify({
+                    app_version: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
+                    device_class: "browser|browser",
+                    device_family: "none",
+                    device_id: "c03b3603-075e-4276-b420-a92d9ee93035",
+                    os_name: "Windows",
+                    os_version: "10"
+                })
+            };
+
+            const body = {
+                refreshToken: currentRefreshToken
+            };
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(body)
+            });
+
+            const data = await response.json();
+
+            if (data && data.data && data.data.accessToken) {
+                currentAccessToken = data.data.accessToken;
+                
+                if (data.data.refreshToken) {
+                    currentRefreshToken = data.data.refreshToken;
+                    localStorage.setItem('refreshToken', currentRefreshToken);
+                }
+                
+                saveTokens();
+                updateTokenStatus();
+                return currentAccessToken;
+            } else {
+                throw new Error('Response API tidak mengandung accessToken yang valid.');
+            }
+        }
+
+        // Auto refresh if expired
+        async function ensureValidToken() {
+            if (!currentAccessToken || isTokenExpired(currentAccessToken)) {
+                await performRefreshToken();
+            }
+        }
 
         // Utility Functions
         function tentukanQty(plu) {
@@ -355,16 +607,6 @@
                 const oldestKey = requestCache.keys().next().value;
                 requestCache.delete(oldestKey);
             }
-        }
-
-        function parseTokenInput(tokenInput) {
-            const accessMatch = tokenInput.match(/accessToken\s*:\s*["']([^"']+)["']/);
-            const refreshMatch = tokenInput.match(/refreshToken\s*:\s*["']([^"']+)["']/);
-            
-            return {
-                accessToken: accessMatch ? accessMatch[1] : null,
-                refreshToken: refreshMatch ? refreshMatch[1] : null
-            };
         }
 
         function parsePLUInput(input) {
@@ -531,7 +773,8 @@
 
             for (let i = 0; i < chunks.length; i++) {
                 const chunk = chunks[i];
-                console.log(`Batch ${i + 1}/${chunks.length} (${chunk.length} PLU)...`);
+                document.getElementById('loadingText').textContent = 
+                    `Memproses batch ${i + 1}/${chunks.length} (${chunk.length} PLU)...`;
 
                 try {
                     if (i > 0) {
@@ -539,7 +782,6 @@
                         const delay = Math.min(2000 * Math.max(1, errorRate * 3), 12000);
                         await sleep(delay);
 
-                        // Reset cart with retry
                         let resetSuccess = false;
                         for (let retry = 0; retry < 3; retry++) {
                             resetSuccess = await resetCart(token, storeCode);
@@ -596,7 +838,6 @@
                 return { error: `Tidak ada produk ditemukan untuk ${pluList.length} PLU` };
             }
 
-            // Remove duplicates
             const uniqueProducts = Array.from(
                 new Map(allProducts.map(p => [p.plu, p])).values()
             );
@@ -702,20 +943,61 @@
             resultDiv.classList.add('active');
         }
 
-        // Form Handler
+        // Event Handlers
+        
+        // Save refresh token form
+        document.getElementById('tokenForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const refreshToken = document.getElementById('refreshTokenInput').value.trim();
+            if (!refreshToken) {
+                alert('❌ Refresh token tidak boleh kosong!');
+                return;
+            }
+
+            currentRefreshToken = refreshToken;
+            localStorage.setItem('refreshToken', refreshToken);
+            saveTokens();
+            
+            const messageDiv = document.getElementById('refreshMessage');
+            messageDiv.innerHTML = '<div class="success">✅ Refresh token berhasil disimpan!</div>';
+            
+            setTimeout(() => {
+                messageDiv.innerHTML = '';
+            }, 3000);
+        });
+
+        // Refresh token button
+        document.getElementById('btnRefresh').addEventListener('click', async () => {
+            const btn = document.getElementById('btnRefresh');
+            const messageDiv = document.getElementById('refreshMessage');
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Memproses...';
+            messageDiv.innerHTML = '';
+
+            try {
+                await performRefreshToken();
+                messageDiv.innerHTML = '<div class="success">✅ Token berhasil di-refresh!</div>';
+                
+                setTimeout(() => {
+                    messageDiv.innerHTML = '';
+                }, 3000);
+            } catch (error) {
+                console.error('Error refresh token:', error);
+                messageDiv.innerHTML = `<div class="error">❌ Gagal refresh token: ${error.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Refresh Token';
+            }
+        });
+
+        // Stock check form
         document.getElementById('stockForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const tokenInput = document.getElementById('tokenInput').value;
             const storeCode = document.getElementById('storeCode').value.trim().toUpperCase();
             const pluInput = document.getElementById('pluInput').value;
-
-            // Parse token
-            const tokens = parseTokenInput(tokenInput);
-            if (!tokens.accessToken || !tokens.refreshToken) {
-                alert('❌ Token tidak valid! Pastikan format benar.');
-                return;
-            }
 
             // Parse PLU
             const pluList = parsePLUInput(pluInput);
@@ -728,10 +1010,20 @@
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('loading').classList.add('active');
             document.getElementById('result').classList.remove('active');
+            document.getElementById('loadingText').textContent = 'Memeriksa token...';
 
             try {
+                // Ensure valid token
+                await ensureValidToken();
+
+                if (!currentAccessToken) {
+                    throw new Error('Tidak ada access token. Silakan refresh token terlebih dahulu.');
+                }
+
+                document.getElementById('loadingText').textContent = 'Mengecek stok produk...';
+
                 // Check stock
-                const result = await checkStockBatch(tokens.accessToken, storeCode, pluList);
+                const result = await checkStockBatch(currentAccessToken, storeCode, pluList);
                 
                 // Display result
                 displayResult(result, storeCode);
@@ -748,6 +1040,13 @@
                 document.getElementById('loading').classList.remove('active');
             }
         });
+
+        // Initialize
+        loadTokens();
+        updateTokenStatus();
+        
+        // Update token status every minute
+        setInterval(updateTokenStatus, 60000);
     </script>
 </body>
 </html>
